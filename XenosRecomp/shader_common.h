@@ -51,6 +51,7 @@ Texture2D<float4> g_Texture2DDescriptorHeap[] : register(t0, space0);
 Texture3D<float4> g_Texture3DDescriptorHeap[] : register(t0, space1);
 TextureCube<float4> g_TextureCubeDescriptorHeap[] : register(t0, space2);
 SamplerState g_SamplerDescriptorHeap[] : register(s0, space3);
+ByteAddressBuffer g_BufferDescriptorHeap[] : register(t0, space4);
 
 uint2 getTexture2DDimensions(Texture2D<float4> texture)
 {
@@ -62,7 +63,11 @@ uint2 getTexture2DDimensions(Texture2D<float4> texture)
 float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
 {
     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
+#if __SHADER_TARGET_STAGE == __SHADER_STAGE_VERTEX
+    return texture.SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + offset / getTexture2DDimensions(texture), 0);
+#else
     return texture.Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + offset / getTexture2DDimensions(texture));
+#endif
 }
 
 float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
@@ -157,6 +162,69 @@ struct CubeMapData
 float4 tfetchCube(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, inout CubeMapData cubeMapData)
 {
     return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z]);
+}
+
+#if 0
+float4 tfetchRawFloat3(uint constIndex, uint strideWords, uint offsetWords, uint elementIndex)
+{
+    // 1. Grab the buffer from the descriptor heap using the Fetch Constant index (e.g., 31)
+    ByteAddressBuffer buffer = g_BufferDescriptorHeap[constIndex];
+
+    // 2. Calculate the byte offset. 
+    // The Xenos instruction stores stride and offset in 32-bit Words, but ByteAddressBuffer requires Bytes.
+    uint byteOffset = (elementIndex * strideWords + offsetWords) * 4;
+
+    // 3. Load 3 consecutive 32-bit values (12 bytes total)
+    uint3 rawData = buffer.Load3(byteOffset);
+
+    // 4. Cast the raw bits to floats and pad the W component to 1.0 (standard vector behavior)
+    return float4(asfloat(rawData.x), asfloat(rawData.y), asfloat(rawData.z), 1.0);
+}
+#endif
+float4 tfetch_8_8_8_8(uint c, uint s, uint o, uint e) {
+    uint v = g_BufferDescriptorHeap[c].Load((e * s + o) * 4);
+    return float4(v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, v >> 24) / 255.0;
+}
+float4 tfetch_2_10_10_10(uint c, uint s, uint o, uint e) {
+    uint v = g_BufferDescriptorHeap[c].Load((e * s + o) * 4);
+    return float4(v & 0x3FF, (v >> 10) & 0x3FF, (v >> 20) & 0x3FF, v >> 30) / float4(1023.0, 1023.0, 1023.0, 3.0);
+}
+float4 tfetch_10_11_11(uint c, uint s, uint o, uint e) {
+    uint v = g_BufferDescriptorHeap[c].Load((e * s + o) * 4);
+    return float4(v & 0x7FF, (v >> 11) & 0x7FF, (v >> 22) & 0x3FF, 1.0) / float4(2047.0, 2047.0, 1023.0, 1.0);
+}
+float4 tfetch_11_11_10(uint c, uint s, uint o, uint e) {
+    uint v = g_BufferDescriptorHeap[c].Load((e * s + o) * 4);
+    return float4(v & 0x3FF, (v >> 10) & 0x7FF, (v >> 21) & 0x7FF, 1.0) / float4(1023.0, 2047.0, 2047.0, 1.0);
+}
+float4 tfetch_16_16_16_16(uint c, uint s, uint o, uint e) {
+    uint2 v = g_BufferDescriptorHeap[c].Load2((e * s + o) * 4);
+    return float4(v.x & 0xFFFF, v.x >> 16, v.y & 0xFFFF, v.y >> 16) / 65535.0;
+}
+float4 tfetch_16_16_16_16_FLOAT(uint c, uint s, uint o, uint e) {
+    uint2 v = g_BufferDescriptorHeap[c].Load2((e * s + o) * 4);
+    return float4(f16tof32(v.x & 0xFFFF), f16tof32(v.x >> 16), f16tof32(v.y & 0xFFFF), f16tof32(v.y >> 16));
+}
+float4 tfetch_32(uint c, uint s, uint o, uint e) {
+    return float4(g_BufferDescriptorHeap[c].Load((e * s + o) * 4), 0.0, 0.0, 1.0);
+}
+float4 tfetch_32_32(uint c, uint s, uint o, uint e) {
+    return float4(g_BufferDescriptorHeap[c].Load2((e * s + o) * 4), 0.0, 1.0);
+}
+float4 tfetch_32_32_32_32(uint c, uint s, uint o, uint e) {
+    return float4(g_BufferDescriptorHeap[c].Load4((e * s + o) * 4));
+}
+float4 tfetch_32_FLOAT(uint c, uint s, uint o, uint e) {
+    return float4(asfloat(g_BufferDescriptorHeap[c].Load((e * s + o) * 4)), 0.0, 0.0, 1.0);
+}
+float4 tfetch_32_32_FLOAT(uint c, uint s, uint o, uint e) {
+    return float4(asfloat(g_BufferDescriptorHeap[c].Load2((e * s + o) * 4)), 0.0, 1.0);
+}
+float4 tfetch_32_32_32_FLOAT(uint c, uint s, uint o, uint e) {
+    return float4(asfloat(g_BufferDescriptorHeap[c].Load3((e * s + o) * 4)), 1.0);
+}
+float4 tfetch_32_32_32_32_FLOAT(uint c, uint s, uint o, uint e) {
+    return asfloat(g_BufferDescriptorHeap[c].Load4((e * s + o) * 4));
 }
 
 float4 tfetchR11G11B10(uint4 value)

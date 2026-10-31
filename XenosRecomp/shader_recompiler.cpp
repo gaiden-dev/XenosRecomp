@@ -177,35 +177,107 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
     out += " = ";
 
     auto findResult = vertexElements.find(address);
-    assert(findResult != vertexElements.end());
 
-    switch (findResult->second.usage)
-    {
-    case DeclUsage::Normal:
-    case DeclUsage::Tangent:
-    case DeclUsage::Binormal:
-        specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL;
-        print("tfetchR11G11B10(");
-        break;
+    if (findResult != vertexElements.end()) {
+        switch (findResult->second.usage)
+        {
+        case DeclUsage::Normal:
+        case DeclUsage::Tangent:
+        case DeclUsage::Binormal:
+            specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL;
+            print("tfetchR11G11B10(");
+            break;
 
-    case DeclUsage::TexCoord:
-        print("tfetchTexcoord(g_SwappedTexcoords, ");
-        break;
+        case DeclUsage::TexCoord:
+            print("tfetchTexcoord(g_SwappedTexcoords, ");
+            break;
+        }
+
+        print("i{}{}", USAGE_VARIABLES[uint32_t(findResult->second.usage)], uint32_t(findResult->second.usageIndex));
+
+        switch (findResult->second.usage)
+        {
+        case DeclUsage::Normal:
+        case DeclUsage::Tangent:
+        case DeclUsage::Binormal:
+            out += ')';
+            break;
+
+        case DeclUsage::TexCoord:
+            print(", {})", uint32_t(findResult->second.usageIndex));
+            break;
+        }
     }
+    else {
+        switch (instr.format)
+        {
+        case 6: // k_8_8_8_8
+            print("tfetch_8_8_8_8({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 7: // k_2_10_10_10
+            print("tfetch_2_10_10_10({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 16: // k_10_11_11
+            print("tfetch_10_11_11({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 17: // k_11_11_10
+            print("tfetch_11_11_10({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
 
-    print("i{}{}", USAGE_VARIABLES[uint32_t(findResult->second.usage)], uint32_t(findResult->second.usageIndex));
+        case 25: // k_16_16
+            print("tfetch_16_16_16_16({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 26: // k_16_16_16_16
+            print("tfetch_16_16_16_16({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 31: // k_16_16_FLOAT
+            print("tfetch_16_16_16_16_FLOAT({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 32: // k_16_16_16_16_FLOAT
+            print("tfetch_16_16_16_16_FLOAT({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 33: // k_32
+            print("tfetch_32({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 34: // k_32_32
+            print("tfetch_32_32({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 35: // k_32_32_32_32
+            print("tfetch_32_32_32_32({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+            
+        case 36: // k_32_FLOAT
+            print("tfetch_32_FLOAT({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 37: // k_32_32_FLOAT
+            print("tfetch_32_32_FLOAT({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 38: // k_32_32_32_32_FLOAT
+            print("tfetch_32_32_32_32_FLOAT({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
+            
+        case 57: // k_32_32_32_FLOAT
+            print("tfetch_32_32_32_FLOAT({}, {}, {}, r{}.x)", instr.constIndex & 0xF, instr.stride, instr.offset, instr.srcRegister);
+            break;
 
-    switch (findResult->second.usage)
-    {
-    case DeclUsage::Normal:
-    case DeclUsage::Tangent:
-    case DeclUsage::Binormal:
-        out += ')';
-        break;
-
-    case DeclUsage::TexCoord:
-        print(", {})", uint32_t(findResult->second.usageIndex));
-        break;
+        default:
+            // Generic fallback if format isn't explicitly handled yet
+            __debugbreak();
+            print("tfetchFormat_{:d}({}, {}, {}, {})", instr.format, instr.constIndex & 0xF, instr.format, instr.stride, instr.offset);
+            break;
+        }
     }
 
     out += '.';
@@ -252,7 +324,7 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
     bool subtractFromOne = false;
 #endif
 
-    auto findResult = samplers.find(instr.constIndex);
+    auto findResult = samplers.find(instr.constIndex & 0xF);
     if (findResult != samplers.end())
     {
         constNamePtr = findResult->second;
@@ -263,7 +335,7 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
     }
     else
     {
-        constName = fmt::format("s{}", instr.constIndex);
+        constName = fmt::format("s{}", instr.constIndex & 0xF);
         constNamePtr = constName.c_str();
     }
 
@@ -621,6 +693,30 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
                 }
             #endif
 
+                break;
+
+            case ExportRegister::ExportAddress:
+                exportRegister = "eA";
+                break;
+
+            case ExportRegister::ExportData0:
+                exportRegister = "eM0";
+                break;
+
+            case ExportRegister::ExportData1:
+                exportRegister = "eM1";
+                break;
+
+            case ExportRegister::ExportData2:
+                exportRegister = "eM2";
+                break;
+
+            case ExportRegister::ExportData3:
+                exportRegister = "eM3";
+                break;
+
+            case ExportRegister::ExportData4:
+                exportRegister = "eM4";
                 break;
 
             default:
@@ -1103,7 +1199,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     const auto shaderContainer = reinterpret_cast<const ShaderContainer*>(shaderData);
 
     assert((shaderContainer->flags & 0xFFFFFF00) == 0x102A1100);
-    assert(shaderContainer->constantTableOffset != NULL);
+    //assert(shaderContainer->constantTableOffset != NULL);
 
     out += include;
     out += '\n';
@@ -1111,7 +1207,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     isPixelShader = (shaderContainer->flags & 0x1) == 0;
 
     const auto constantTableContainer = reinterpret_cast<const ConstantTableContainer*>(shaderData + shaderContainer->constantTableOffset);
-    constantTableData = reinterpret_cast<const uint8_t*>(&constantTableContainer->constantTable);
+    if (shaderContainer->constantTableOffset) {
+        constantTableData = reinterpret_cast<const uint8_t*>(&constantTableContainer->constantTable);
+    }
 
     out += "#ifdef __spirv__\n\n";
 
@@ -1120,124 +1218,130 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     bool hasIndexCount = false;
 #endif
 
-    for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
-    {
-        const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
-            constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
-
-        const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
-
-    #ifdef UNLEASHED_RECOMP
-        if (!isPixelShader)
+    if (shaderContainer->constantTableOffset) {
+        for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
         {
-            if (strcmp(constantName, "g_MtxProjection") == 0)
-                hasMtxProjection = true;
-            else if (strcmp(constantName, "g_InstanceTypes") == 0)
-                isMetaInstancer = true;
-            else if (strcmp(constantName, "g_IndexCount") == 0)
-                hasIndexCount = true;
-        }
-        else
-        {
-            if (strcmp(constantName, "g_MtxPrevInvViewProjection") == 0)
-                hasMtxPrevInvViewProjection = true;
-        }
-    #endif
+            const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
+                constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
 
-        switch (constantInfo->registerSet)
-        {
-        case RegisterSet::Float4:
-        {
-            const char* shaderName = isPixelShader ? "Pixel" : "Vertex";
+            const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
 
-            if (constantInfo->registerCount > 1)
+#ifdef UNLEASHED_RECOMP
+            if (!isPixelShader)
             {
-                uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
-
-                println("#define {}(INDEX) select((INDEX) < {}, vk::RawBufferLoad<float4>(g_PushConstants.{}ShaderConstants + ({} + min(INDEX, {})) * 16, 0x10), 0.0)",
-                    constantName, tailCount, shaderName, constantInfo->registerIndex.get(), tailCount - 1);
+                if (strcmp(constantName, "g_MtxProjection") == 0)
+                    hasMtxProjection = true;
+                else if (strcmp(constantName, "g_InstanceTypes") == 0)
+                    isMetaInstancer = true;
+                else if (strcmp(constantName, "g_IndexCount") == 0)
+                    hasIndexCount = true;
             }
             else
             {
-                println("#define {} vk::RawBufferLoad<float4>(g_PushConstants.{}ShaderConstants + {}, 0x10)",
-                    constantName, shaderName, constantInfo->registerIndex * 16);
+                if (strcmp(constantName, "g_MtxPrevInvViewProjection") == 0)
+                    hasMtxPrevInvViewProjection = true;
             }
-            
-            for (uint16_t j = 0; j < constantInfo->registerCount; j++)
-                float4Constants.emplace(constantInfo->registerIndex + j, constantInfo);
+#endif
 
-            break;
-        }
-
-        case RegisterSet::Sampler:
-        {
-            for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+            switch (constantInfo->registerSet)
             {
-                println("#define {}_Texture{}DescriptorIndex vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {})",
-                    constantName, TEXTURE_DIMENSIONS[j], j * 64 + constantInfo->registerIndex * 4);
+            case RegisterSet::Float4:
+            {
+                const char* shaderName = isPixelShader ? "Pixel" : "Vertex";
+
+                if (constantInfo->registerCount > 1)
+                {
+                    uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
+
+                    println("#define {}(INDEX) select((INDEX) < {}, vk::RawBufferLoad<float4>(g_PushConstants.{}ShaderConstants + ({} + min(INDEX, {})) * 16, 0x10), 0.0)",
+                        constantName, tailCount, shaderName, constantInfo->registerIndex.get(), tailCount - 1);
+                }
+                else
+                {
+                    println("#define {} vk::RawBufferLoad<float4>(g_PushConstants.{}ShaderConstants + {}, 0x10)",
+                        constantName, shaderName, constantInfo->registerIndex * 16);
+                }
+
+                for (uint16_t j = 0; j < constantInfo->registerCount; j++)
+                    float4Constants.emplace(constantInfo->registerIndex + j, constantInfo);
+
+                break;
             }
 
-            println("#define {}_SamplerDescriptorIndex vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {})",
-                constantName, std::size(TEXTURE_DIMENSIONS) * 64 + constantInfo->registerIndex * 4);
+            case RegisterSet::Sampler:
+            {
+                for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+                {
+                    println("#define {}_Texture{}DescriptorIndex vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {})",
+                        constantName, TEXTURE_DIMENSIONS[j], j * 64 + constantInfo->registerIndex * 4);
+                }
 
-            samplers.emplace(constantInfo->registerIndex, constantName);
-            break;
-        }
+                println("#define {}_SamplerDescriptorIndex vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {})",
+                    constantName, std::size(TEXTURE_DIMENSIONS) * 64 + constantInfo->registerIndex * 4);
 
+                samplers.emplace(constantInfo->registerIndex, constantName);
+                break;
+            }
+
+            }
         }
     }
 
     out += "\n#else\n\n";
 
-    println("cbuffer {}ShaderConstants : register(b{}, space4)", isPixelShader ? "Pixel" : "Vertex", isPixelShader ? 1 : 0);
-    out += "{\n";
+    if (shaderContainer->constantTableOffset) {
+        println("cbuffer {}ShaderConstants : register(b{}, space4)", isPixelShader ? "Pixel" : "Vertex", isPixelShader ? 1 : 0);
+        out += "{\n";
 
-    for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
-    {
-        const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
-            constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
-
-        if (constantInfo->registerSet == RegisterSet::Float4)
+        for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
         {
-            const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
+            const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
+                constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
 
-            print("\tfloat4 {}", constantName);
-
-            if (constantInfo->registerCount > 1)
-                print("[{}]", constantInfo->registerCount.get());
-
-            println(" : packoffset(c{});", constantInfo->registerIndex.get());
-
-            if (constantInfo->registerCount > 1)
+            if (constantInfo->registerSet == RegisterSet::Float4)
             {
-                uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
-                println("#define {0}(INDEX) select((INDEX) < {1}, {0}[min(INDEX, {2})], 0.0)", constantName, tailCount, tailCount - 1);
+                const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
+
+                print("\tfloat4 {}", constantName);
+
+                if (constantInfo->registerCount > 1)
+                    print("[{}]", constantInfo->registerCount.get());
+
+                println(" : packoffset(c{});", constantInfo->registerIndex.get());
+
+                if (constantInfo->registerCount > 1)
+                {
+                    uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
+                    println("#define {0}(INDEX) select((INDEX) < {1}, {0}[min(INDEX, {2})], 0.0)", constantName, tailCount, tailCount - 1);
+                }
             }
         }
-    }
 
-    out += "};\n\n";
+        out += "};\n\n";
+    }
 
     out += "cbuffer SharedConstants : register(b2, space4)\n";
     out += "{\n";
 
-    for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
-    {
-        const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
-            constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
-
-        if (constantInfo->registerSet == RegisterSet::Sampler)
+    if (shaderContainer->constantTableOffset) {
+        for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
         {
-            const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
+            const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
+                constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
 
-            for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+            if (constantInfo->registerSet == RegisterSet::Sampler)
             {
-                println("\tuint {}_Texture{}DescriptorIndex : packoffset(c{}.{});",
-                    constantName, TEXTURE_DIMENSIONS[j], j * 4 + constantInfo->registerIndex / 4, SWIZZLES[constantInfo->registerIndex % 4]);
-            }
+                const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
 
-            println("\tuint {}_SamplerDescriptorIndex : packoffset(c{}.{});",
-                constantName, 4 * std::size(TEXTURE_DIMENSIONS) + constantInfo->registerIndex / 4, SWIZZLES[constantInfo->registerIndex % 4]);
+                for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+                {
+                    println("\tuint {}_Texture{}DescriptorIndex : packoffset(c{}.{});",
+                        constantName, TEXTURE_DIMENSIONS[j], j * 4 + constantInfo->registerIndex / 4, SWIZZLES[constantInfo->registerIndex % 4]);
+                }
+
+                println("\tuint {}_SamplerDescriptorIndex : packoffset(c{}.{});",
+                    constantName, 4 * std::size(TEXTURE_DIMENSIONS) + constantInfo->registerIndex / 4, SWIZZLES[constantInfo->registerIndex % 4]);
+            }
         }
     }
 
@@ -1246,16 +1350,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
     out += "#endif\n";
 
-    for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
-    {
-        const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
-            constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
-
-        if (constantInfo->registerSet == RegisterSet::Bool)
+    if (shaderContainer->constantTableOffset) {
+        for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
         {
-            const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
-            println("\t#define {} (1 << {})", constantName, constantInfo->registerIndex + (isPixelShader ? 16 : 0));
-            boolConstants.emplace(constantInfo->registerIndex, constantName);
+            const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
+                constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
+
+            if (constantInfo->registerSet == RegisterSet::Bool)
+            {
+                const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
+                println("\t#define {} (1 << {})", constantName, constantInfo->registerIndex + (isPixelShader ? 16 : 0));
+                boolConstants.emplace(constantInfo->registerIndex, constantName);
+            }
         }
     }
 
@@ -1338,6 +1444,43 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
             vertexElements.emplace(uint32_t(vertexElement.address), vertexElement);
         }
+        //for (uint32_t i = 0; i < vertexShader->field20; i++)
+        //{
+        //    union
+        //    {
+        //        VertexElement vertexElement;
+        //        uint32_t value;
+        //    };
+        //
+        //    uint32_t interpolatorCount = (shader->interpolatorInfo >> 5) & 0x1F;
+        //    value = vertexShader->vertexElementsAndInterpolators[vertexShader->field18 + vertexShader->vertexElementCount + interpolatorCount + i];
+        //
+        //    const char* usageType = USAGE_TYPES[uint32_t(vertexElement.usage)];
+        //
+        //#ifdef UNLEASHED_RECOMP
+        //    if ((vertexElement.usage == DeclUsage::TexCoord && vertexElement.usageIndex == 2 && isMetaInstancer) ||
+        //        (vertexElement.usage == DeclUsage::Position && vertexElement.usageIndex == 1))
+        //    {
+        //        usageType = "uint4";
+        //    }
+        //#endif
+        //
+        //    out += '\t';
+        //
+        //    for (auto& usageLocation : USAGE_LOCATIONS)
+        //    {
+        //        if (usageLocation.usage == vertexElement.usage && usageLocation.usageIndex == vertexElement.usageIndex)
+        //        {
+        //            print("[[vk::location({})]] ", usageLocation.location);
+        //            break;
+        //        }
+        //    }
+        //
+        //    println("in {0} i{1}{2} : {3}{2},", usageType, USAGE_VARIABLES[uint32_t(vertexElement.usage)],
+        //        uint32_t(vertexElement.usageIndex), USAGE_SEMANTICS[uint32_t(vertexElement.usage)]);
+        //
+        //    vertexElements.emplace(uint32_t(vertexElement.address), vertexElement);
+        //}
 
     #ifdef UNLEASHED_RECOMP
         if (hasIndexCount)
@@ -1483,6 +1626,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     out += "\tint aL = 0;\n";
     out += "\tbool p0 = false;\n";
     out += "\tfloat ps = 0.0;\n";
+    out += "\tfloat4 eA = 0.0;\n";
+    out += "\tfloat4 eM0 = 0.0;\n";
+    out += "\tfloat4 eM1 = 0.0;\n";
+    out += "\tfloat4 eM2 = 0.0;\n";
+    out += "\tfloat4 eM3 = 0.0;\n";
+    out += "\tfloat4 eM4 = 0.0;\n";
     if (isPixelShader)
     {
 #ifdef UNLEASHED_RECOMP
@@ -1694,11 +1843,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                     }
                     else
                     {
-                        auto findResult = boolConstants.find(cfInstr.condJmp.boolAddress);
+                        auto findResult = boolConstants.find(cfInstr.condJmp.boolAddress & 0b01111111);
                         if (findResult != boolConstants.end())
                             println("if ((g_Booleans & {}) {}= 0)", findResult->second, cfInstr.condJmp.condition ^ simpleControlFlow ? "!" : "=");
                         else
-                            println("if (b{} {}= 0)", uint32_t(cfInstr.condJmp.boolAddress), cfInstr.condJmp.condition ^ simpleControlFlow ? "!" : "=");
+                            println("if (b{} {}= 0)", uint32_t(cfInstr.condJmp.boolAddress & 0b01111111), cfInstr.condJmp.condition ^ simpleControlFlow ? "!" : "=");
                     }
 
                     if (simpleControlFlow)
